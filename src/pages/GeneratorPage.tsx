@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Brain, 
   Zap,
@@ -18,7 +19,8 @@ import {
   Eye,
   Code,
   CheckCircle,
-  AlertTriangle
+  AlertTriangle,
+  Edit3
 } from 'lucide-react';
 import { initTensorFlow, loadWebsiteGenerationModel, generateWebsiteFromDescription, generateCompleteWebsiteHTML } from '@/lib/tfUtils';
 import JSZip from 'jszip';
@@ -31,28 +33,30 @@ const GeneratorPage = () => {
   const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [modelLoaded, setModelLoaded] = useState(false);
+  const [editableCode, setEditableCode] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'preview' | 'code'>('preview');
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Inicializar o modelo Transformers.js com GPT-2
+  // Inicializar o modelo Transformers.js com DistilGPT-2
   useEffect(() => {
     const loadModel = async () => {
-      setStatus('Inicializando o motor de IA GPT-2...');
+      setStatus('Inicializando o motor de IA DistilGPT-2...');
       setProgress(5);
       
       try {
         await initTensorFlow();
         setProgress(15);
         
-        setStatus('Carregando modelo GPT-2...');
-        // Carregando modelo GPT-2 para geração de websites
+        setStatus('Carregando modelo DistilGPT-2...');
+        // Carregando modelo DistilGPT-2 para geração de websites
         const model = await loadWebsiteGenerationModel();
         
         setModelLoaded(true);
-        setStatus('Motor de IA GPT-2 pronto!');
+        setStatus('Motor de IA DistilGPT-2 pronto!');
         setProgress(100);
       } catch (error) {
-        console.error('Erro ao inicializar o modelo GPT-2:', error);
-        setError('Falha ao carregar o modelo GPT-2. Verifique sua conexão com a internet e tente novamente.');
+        console.error('Erro ao inicializar o modelo DistilGPT-2:', error);
+        setError('Falha ao carregar o modelo DistilGPT-2. Verifique sua conexão com a internet e tente novamente. Primeiro carregamento pode levar alguns minutos e requer conexão estável.');
         setModelLoaded(false); // Não permitir uso se o modelo falhar ao carregar
         setStatus('Modelo não carregado');
         setProgress(100);
@@ -61,6 +65,34 @@ const GeneratorPage = () => {
     
     loadModel();
   }, []);
+  
+  const retryModelLoad = async () => {
+    setError(null);
+    setStatus('Tentando recarregar o modelo...');
+    setProgress(0);
+    
+    try {
+      setStatus('Inicializando o motor de IA DistilGPT-2...');
+      setProgress(5);
+      
+      await initTensorFlow();
+      setProgress(15);
+      
+      setStatus('Carregando modelo DistilGPT-2...');
+      const model = await loadWebsiteGenerationModel();
+      
+      setModelLoaded(true);
+      setStatus('Motor de IA DistilGPT-2 pronto!');
+      setError(null);
+      setProgress(100);
+    } catch (error) {
+      console.error('Erro ao recarregar o modelo DistilGPT-2:', error);
+      setError('Falha ao carregar o modelo DistilGPT-2. Verifique sua conexão com a internet e tente novamente. Primeiro carregamento pode levar alguns minutos e requer conexão estável.');
+      setModelLoaded(false);
+      setStatus('Modelo não carregado');
+      setProgress(100);
+    }
+  };
 
   const generateWebsite = async () => {
     if (!prompt.trim()) {
@@ -69,7 +101,7 @@ const GeneratorPage = () => {
     }
     
     if (!modelLoaded) {
-      setError('O modelo GPT-2 ainda não está carregado. Aguarde antes de tentar gerar um website.');
+      setError('O modelo DistilGPT-2 ainda não está carregado. Aguarde antes de tentar gerar um website.');
       return;
     }
     
@@ -80,7 +112,7 @@ const GeneratorPage = () => {
     
     try {
       // Etapas reais de processamento de IA usando modelos Transformers.js com GPT-2
-      setStatus('Processando sua descrição com GPT-2...');
+      setStatus('Processando sua descrição com DistilGPT-2...');
       setProgress(20);
       
       setStatus('Gerando código HTML...');
@@ -91,18 +123,19 @@ const GeneratorPage = () => {
       setProgress(70);
       
       // Implementação real - usando modelo GPT-2 para gerar o HTML
-      setStatus('Executando predição da IA...');
+      setStatus('Executando predição da IA com DistilGPT-2...');
       setProgress(85);
       
       // Gerar o HTML com base na descrição usando o modelo GPT-2
       const generatedHtml = await generateWebsiteFromDescription(prompt, model);
       
       setGeneratedSite(generatedHtml);
+      setEditableCode(generatedHtml); // Also set editable code
       setProgress(100);
       setStatus('Website gerado com sucesso!');
     } catch (err) {
       console.error('Erro ao gerar website:', err);
-      setError('Falha ao gerar website com o modelo GPT-2. Verifique sua conexão com a internet e tente novamente.');
+      setError('Falha ao gerar website com o modelo DistilGPT-2. Verifique sua conexão com a internet e tente novamente ou utilize a opção de modelo padrão.');
     } finally {
       setIsLoading(false);
     }
@@ -111,9 +144,10 @@ const GeneratorPage = () => {
 
   
   const downloadWebsite = () => {
-    if (!generatedSite) return;
+    if (!generatedSite && !editableCode) return;
     
-    const blob = new Blob([generatedSite], { type: 'text/html' });
+    const codeToDownload = editableCode || generatedSite;
+    const blob = new Blob([codeToDownload], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -125,13 +159,14 @@ const GeneratorPage = () => {
   };
   
   const downloadAsZip = async () => {
-    if (!generatedSite) return;
+    if (!generatedSite && !editableCode) return;
     
     // Real implementation to create and download a ZIP archive
     const zip = new JSZip();
     
     // Add the main HTML file
-    zip.file('index.html', generatedSite);
+    const codeToUse = editableCode || generatedSite;
+    zip.file('index.html', codeToUse);
     
     // In a real implementation, we could add separate CSS and JS files
     // Extract and add CSS files if needed
@@ -152,9 +187,10 @@ const GeneratorPage = () => {
   };
   
   const previewInNewTab = () => {
-    if (!generatedSite) return;
+    if (!generatedSite && !editableCode) return;
     
-    const blob = new Blob([generatedSite], { type: 'text/html' });
+    const codeToPreview = editableCode || generatedSite;
+    const blob = new Blob([codeToPreview], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank');
   };
@@ -217,10 +253,35 @@ const GeneratorPage = () => {
                     )}
                   </Button>
                   
+                  {/* Botão para gerar usando modelo padrão quando IA falha */}
+                  {!modelLoaded && (
+                    <Button 
+                      onClick={() => {
+                        setError(null);
+                        const templateHtml = generateCompleteWebsiteHTML(prompt);
+                        setGeneratedSite(templateHtml);
+                        setEditableCode(templateHtml); // Also set editable code
+                        setStatus('Website gerado com modelo padrão!');
+                      }}
+                      variant="secondary"
+                      className="w-full mt-2"
+                    >
+                      <Layout className="mr-2 h-4 w-4" />
+                      Usar Modelo Padrão
+                    </Button>
+                  )}
+                  
                   {error && (
                     <Alert variant="destructive" className="mt-4">
                       <AlertTriangle className="h-4 w-4" />
                       <AlertDescription>{error}</AlertDescription>
+                      {!modelLoaded && (
+                        <div className="mt-3">
+                          <Button onClick={retryModelLoad} variant="outline" size="sm">
+                            Tentar Novamente
+                          </Button>
+                        </div>
+                      )}
                     </Alert>
                   )}
                   
@@ -286,47 +347,89 @@ const GeneratorPage = () => {
             </Card>
           </div>
           
-          {/* Preview Section */}
+          {/* Preview & Code Editor Section */}
           <div className="lg:col-span-2">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Eye className="h-5 w-5 text-blue-600" />
-                  Pré-visualização
+                  Pré-visualização & Editor de Código
                 </CardTitle>
                 <CardDescription>
-                  Veja seu website gerado por IA
+                  Veja seu website gerado por IA ou edite o código diretamente
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="border rounded-lg overflow-hidden bg-white h-[500px] relative">
-                  {isLoading && (
-                    <div className="absolute inset-0 bg-black/20 flex items-center justify-center z-10">
-                      <div className="text-center">
-                        <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />
-                        <p className="mt-2 text-gray-600">Gerando seu website...</p>
-                      </div>
-                    </div>
-                  )}
+                <Tabs defaultValue="preview" value={activeTab} onValueChange={(value) => setActiveTab(value as 'preview' | 'code')} className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="preview" className="flex items-center gap-2">
+                      <Eye className="h-4 w-4" />
+                      Visualizar
+                    </TabsTrigger>
+                    <TabsTrigger value="code" className="flex items-center gap-2">
+                      <Code className="h-4 w-4" />
+                      Editar Código
+                    </TabsTrigger>
+                  </TabsList>
                   
-                  {generatedSite ? (
-                    <iframe
-                      ref={iframeRef}
-                      srcDoc={generatedSite}
-                      className="w-full h-full"
-                      title="Pré-visualização do Website Gerado"
-                      sandbox="allow-scripts allow-same-origin"
-                    />
-                  ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-center p-8 text-gray-500">
-                      <div className="mb-4 p-3 bg-blue-50 rounded-full">
-                        <Play className="h-10 w-10 text-blue-500" />
-                      </div>
-                      <h3 className="text-lg font-medium mb-2">Gerar um Website</h3>
-                      <p>Seu website gerado por IA aparecerá aqui</p>
+                  <TabsContent value="preview" className="space-y-4">
+                    <div className="border rounded-lg overflow-hidden bg-white h-[500px] relative">
+                      {isLoading && (
+                        <div className="absolute inset-0 bg-black/20 flex items-center justify-center z-10">
+                          <div className="text-center">
+                            <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />
+                            <p className="mt-2 text-gray-600">Gerando seu website...</p>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {generatedSite ? (
+                        <iframe
+                          ref={iframeRef}
+                          srcDoc={editableCode || generatedSite}
+                          className="w-full h-full"
+                          title="Pré-visualização do Website Gerado"
+                          sandbox="allow-scripts allow-same-origin"
+                        />
+                      ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-center p-8 text-gray-500">
+                          <div className="mb-4 p-3 bg-blue-50 rounded-full">
+                            <Play className="h-10 w-10 text-blue-500" />
+                          </div>
+                          <h3 className="text-lg font-medium mb-2">Gerar um Website</h3>
+                          <p>Seu website gerado por IA aparecerá aqui</p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </TabsContent>
+                  
+                  <TabsContent value="code" className="space-y-4">
+                    <div className="border rounded-lg overflow-hidden bg-gray-900 text-gray-100 font-mono text-sm">
+                      <div className="flex justify-between items-center bg-gray-800 px-4 py-2">
+                        <div className="text-sm text-gray-300">editor-code</div>
+                        <Button 
+                          onClick={() => {
+                            setEditableCode(generatedSite || '');
+                            setGeneratedSite(editableCode);
+                          }}
+                          size="sm"
+                          variant="secondary"
+                          className="flex items-center gap-2"
+                        >
+                          <Edit3 className="h-3 w-3" />
+                          Atualizar Visualização
+                        </Button>
+                      </div>
+                      <textarea
+                        value={editableCode}
+                        onChange={(e) => setEditableCode(e.target.value)}
+                        className="w-full h-[450px] p-4 bg-gray-900 text-gray-100 font-mono text-sm resize-none focus:outline-none"
+                        spellCheck="false"
+                        placeholder="Seu código HTML será exibido aqui..."
+                      />
+                    </div>
+                  </TabsContent>
+                </Tabs>
                 
                 {generatedSite && (
                   <div className="flex flex-wrap gap-2 mt-4">

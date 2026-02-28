@@ -2,23 +2,37 @@ import { pipeline, AutoTokenizer, AutoModelForCausalLM } from '@xenova/transform
 
 // Create a singleton for the feature extraction pipeline
 class GPT2Singleton {
-  static modelId = 'gpt2';
+  static modelId = 'distilgpt2'; // Using a smaller, more reliable model
   static model = null;
   static tokenizer = null;
 
   static async getInstance(progress_callback = null) {
     if (this.model === null || this.tokenizer === null) {
-      // Load the model and tokenizer
-      this.model = await AutoModelForCausalLM.from_pretrained(this.modelId, {
-        progress_callback,
-      });
-      this.tokenizer = await AutoTokenizer.from_pretrained(this.modelId, {
-        progress_callback,
-      });
+      try {
+        // Load the model and tokenizer with error handling
+        this.model = await AutoModelForCausalLM.from_pretrained(this.modelId, {
+          progress_callback,
+          // Use cache and offline mode when possible
+          cache_dir: './models',
+          revision: 'main',
+        });
+        this.tokenizer = await AutoTokenizer.from_pretrained(this.modelId, {
+          progress_callback,
+          // Use cache and offline mode when possible
+          cache_dir: './models',
+          revision: 'main',
+        });
 
-      // Add padding token if it doesn't exist
-      if (!this.tokenizer.padTokenId) {
-        this.tokenizer.padTokenId = this.tokenizer.eosTokenId;
+        // Add padding token if it doesn't exist
+        if (!this.tokenizer.padTokenId) {
+          this.tokenizer.padTokenId = this.tokenizer.eosTokenId;
+        }
+      } catch (error) {
+        console.error('Error loading model:', error);
+        // Reset to allow retry
+        this.model = null;
+        this.tokenizer = null;
+        throw error;
       }
     }
 
@@ -53,18 +67,26 @@ export const initTensorFlow = async (): Promise<void> => {
  */
 export const loadWebsiteGenerationModel = async () => {
   try {
-    console.log('Loading GPT-2 website generation model...');
+    console.log('Loading DistilGPT-2 website generation model...');
 
     // Get the GPT-2 model and tokenizer instance
     const { model, tokenizer } = await GPT2Singleton.getInstance((progress) => {
       console.log(`Model loading progress: ${progress.status || 'loading...'}`);
     });
 
-    console.log('GPT-2 website generation model loaded successfully');
+    console.log('DistilGPT-2 website generation model loaded successfully');
     return { model, tokenizer };
   } catch (error) {
-    console.error('Error loading GPT-2 website generation model:', error);
-    throw error;
+    console.error('Error loading DistilGPT-2 website generation model:', error);
+    // Provide a more informative error for the UI
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+      throw new Error('Network error: Unable to download the model. Please check your internet connection and try again. Note: The first load requires an internet connection to download the model (~300MB).');
+    } else if (errorMessage.includes('404') || errorMessage.includes('ENOENT')) {
+      throw new Error('Model not found: The model could not be located. Please ensure you have the correct model ID and internet connection.');
+    } else {
+      throw error;
+    }
   }
 };
 
@@ -75,7 +97,7 @@ export const loadWebsiteGenerationModel = async () => {
  */
 export const generateWebsiteFromDescription = async (description: string, modelObj: any) => {
   try {
-    console.log('Generating website from description using GPT-2 model:', description);
+    console.log('Generating website from description using DistilGPT-2 model:', description);
 
     const { model, tokenizer } = modelObj;
 
@@ -104,10 +126,10 @@ export const generateWebsiteFromDescription = async (description: string, modelO
     // Ensure the HTML is properly closed and structured
     generatedText = completeAndSanitizeHTML(generatedText, description);
     
-    console.log('Successfully generated website from description using GPT-2');
+    console.log('Successfully generated website from description using DistilGPT-2');
     return generatedText;
   } catch (error) {
-    console.error('Error generating website from description with GPT-2:', error);
+    console.error('Error generating website from description with DistilGPT-2:', error);
     // Fallback to template-based generation if GPT-2 fails
     return generateCompleteWebsiteHTML(description);
   }
